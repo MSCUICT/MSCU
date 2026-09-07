@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server"
 import bcrypt from "bcryptjs"
 import { createAdminSessionToken, ADMIN_SESSION_COOKIE } from "@/lib/admin-session"
 
+function isConfiguredSecret(value: string | undefined): value is string {
+  return !!value && value !== "[SENSITIVE]"
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { username, password } = await req.json()
@@ -9,9 +13,15 @@ export async function POST(req: NextRequest) {
     const expectedUsername = process.env.ADMIN_USERNAME
     const expectedHash = process.env.ADMIN_PASSWORD_HASH
 
-    if (!expectedUsername || !expectedHash) {
+    if (!isConfiguredSecret(expectedUsername) || !isConfiguredSecret(expectedHash)) {
       console.error("ADMIN_USERNAME or ADMIN_PASSWORD_HASH is not set")
-      return NextResponse.json({ error: "Admin login isn't configured yet" }, { status: 500 })
+      return NextResponse.json(
+        {
+          error:
+            "Admin login is not configured locally. Set ADMIN_USERNAME and ADMIN_PASSWORD_HASH in .env.local (use scripts/setup-admin.mjs).",
+        },
+        { status: 503 }
+      )
     }
 
     if (!username || !password) {

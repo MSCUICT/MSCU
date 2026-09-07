@@ -3,11 +3,29 @@
 import { useEffect, useState } from "react"
 import { Heart } from "lucide-react"
 
+function normalizeClientSlug(slug: string) {
+  if (!slug) return slug
+
+  let normalized = slug
+  for (let i = 0; i < 4; i++) {
+    const next = normalized
+    try {
+      normalized = decodeURIComponent(normalized)
+    } catch {
+      break
+    }
+    if (normalized === next) break
+  }
+
+  return normalized
+}
+
 export default function LikeButton({ slug, initialCount }: { slug: string; initialCount: number }) {
   const [count, setCount] = useState(initialCount)
   const [liked, setLiked] = useState(false)
   const [loading, setLoading] = useState(false)
-  const storageKey = `mscu-liked:${slug}`
+  const normalizedSlug = normalizeClientSlug(slug)
+  const storageKey = `mscu-liked:${normalizedSlug}`
 
   useEffect(() => {
     setLiked(localStorage.getItem(storageKey) === "1")
@@ -17,11 +35,16 @@ export default function LikeButton({ slug, initialCount }: { slug: string; initi
     if (liked || loading) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/likes/${encodeURIComponent(slug)}`, { method: "POST" })
+      const res = await fetch(`/api/likes/${encodeURIComponent(normalizedSlug)}`, { method: "POST" })
+      if (!res.ok) {
+        throw new Error(`Like request failed: ${res.status}`)
+      }
       const data = await res.json()
       setCount(data.count)
       setLiked(true)
       localStorage.setItem(storageKey, "1")
+    } catch (error) {
+      console.error("Like request failed:", error)
     } finally {
       setLoading(false)
     }

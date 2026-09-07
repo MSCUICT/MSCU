@@ -1,17 +1,17 @@
 import "server-only"
 import fs from "fs"
 import path from "path"
-import { kv } from "@vercel/kv"
 import { put, del } from "@vercel/blob"
 import { readCollection, writeCollection } from "./local-json-store"
+import { getRedis, USE_LOCAL_DB } from "./upstash-db"
 
-// Auto-detects whether Vercel KV/Blob are connected. Falls back to local
+// Auto-detects whether Upstash Redis/Blob are connected. Falls back to local
 // disk when they're not — lets you run `pnpm dev` and test everything
 // with zero Vercel dashboard setup, and switches to real cloud storage
-// automatically the moment KV/Blob env vars are present (locally via
+// automatically the moment Redis/Blob env vars are present (locally via
 // `vercel env pull`, or in production once connected).
-const USE_LOCAL_KV = !process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN
-const HAS_BLOB = !!process.env.BLOB_READ_WRITE_TOKEN
+const blobToken = process.env.BLOB_READ_WRITE_TOKEN
+const HAS_BLOB = !!blobToken && blobToken !== "[SENSITIVE]"
 
 const COLLECTION = "galleries"
 const INDEX_KEY = "galleries:index"
@@ -41,7 +41,12 @@ function isExpired(gallery: Gallery): boolean {
 // doesn't crash the page.
 function normalizeCoverImage(coverImage: string | null | undefined): string | null {
   if (!coverImage) return null
-  if (coverImage.startsWith("/") || coverImage.startsWith("http")) return coverImage
+  if (coverImage.startsWith("/")) {
+    // Local filesystem paths are only valid when this app is using the local JSON/file fallback.
+    if (!USE_LOCAL_DB) return null
+    return coverImage
+  }
+  if (coverImage.startsWith("http")) return coverImage
   return `/gallery-images/${coverImage}`
 }
 
@@ -58,12 +63,13 @@ async function deleteCoverImage(coverImage: string | null) {
 export async function getGalleries(): Promise<Gallery[]> {
   let all: Gallery[]
 
-  if (USE_LOCAL_KV) {
+  if (USE_LOCAL_DB) {
     all = readCollection<Gallery>(COLLECTION)
   } else {
-    const ids = await kv.zrange<string[]>(INDEX_KEY, 0, -1, { rev: true })
+    const redis = getRedis()
+    const ids = await redis.zrange<string[]>(INDEX_KEY, 0, -1, { rev: true })
     if (!ids || ids.length === 0) return []
-    const raw = await kv.mget<Array<Gallery | null>>(...ids.map((id) => `${RECORD_PREFIX}${id}`))
+    const raw = await Promise.all(ids.map((id) => redis.get<Gallery>(`${RECORD_PREFIX}${id}`)))
     all = raw.filter((g): g is Gallery => g !== null)
   }
 
@@ -76,36 +82,38 @@ export async function getGalleries(): Promise<Gallery[]> {
     if (isExpired(gallery)) {
       prunedAny = true
       await deleteCoverImage(gallery.coverImage)
-      if (!USE_LOCAL_KV) {
-        await kv.del(`${RECORD_PREFIX}${gallery.id}`)
-        await kv.zrem(INDEX_KEY, gallery.id)
+      if (!USE_LOCAL_DB) {
+        const redis = getRedis()
+        await redis.del(`${RECORD_PREFIX}${gallery.id}`)
+        await redis.zrem(INDEX_KEY, gallery.id)
       }
     } else {
       active.push(gallery)
     }
   }
 
-  if (USE_LOCAL_KV && prunedAny) writeCollection(COLLECTION, active)
+  if (USE_LOCAL_DB && prunedAny) writeCollection(COLLECTION, active)
 
   active.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
   return active
 }
 
 export async function getGallery(id: string): Promise<Gallery | null> {
-  if (USE_LOCAL_KV) {
+  if (USE_LOCAL_DB) {
     const gallery = readCollection<Gallery>(COLLECTION).find((g) => g.id === id) ?? null
     if (!gallery) return null
     const normalized = { ...gallery, coverImage: normalizeCoverImage(gallery.coverImage) }
     return isExpired(normalized) ? null : normalized
   }
-  const gallery = await kv.get<Gallery>(`${RECORD_PREFIX}${id}`)
+  const redis = getRedis()
+  const gallery = await redis.get<Gallery>(`${RECORD_PREFIX}${id}`)
   if (!gallery) return null
   const normalized = { ...gallery, coverImage: normalizeCoverImage(gallery.coverImage) }
   return isExpired(normalized) ? null : normalized
 }
 
 export async function upsertGallery(gallery: Gallery): Promise<Gallery> {
-  if (USE_LOCAL_KV) {
+  if (USE_LOCAL_DB) {
     const all = readCollection<Gallery>(COLLECTION)
     const idx = all.findIndex((g) => g.id === gallery.id)
     if (idx >= 0) all[idx] = gallery
@@ -113,19 +121,21 @@ export async function upsertGallery(gallery: Gallery): Promise<Gallery> {
     writeCollection(COLLECTION, all)
     return gallery
   }
-  await kv.set(`${RECORD_PREFIX}${gallery.id}`, gallery)
-  await kv.zadd(INDEX_KEY, { score: new Date(gallery.createdAt).getTime(), member: gallery.id })
+  const redis = getRedis()
+  await redis.set(`${RECORD_PREFIX}${gallery.id}`, gallery)
+  await redis.zadd(INDEX_KEY, { score: new Date(gallery.createdAt).getTime(), member: gallery.id })
   return gallery
 }
 
 export async function deleteGalleryRecord(id: string) {
   const existing = await getGallery(id)
 
-  if (USE_LOCAL_KV) {
+  if (USE_LOCAL_DB) {
     writeCollection(COLLECTION, readCollection<Gallery>(COLLECTION).filter((g) => g.id !== id))
   } else {
-    await kv.del(`${RECORD_PREFIX}${id}`)
-    await kv.zrem(INDEX_KEY, id)
+    const redis = getRedis()
+    await redis.del(`${RECORD_PREFIX}${id}`)
+    await redis.zrem(INDEX_KEY, id)
   }
 
   if (existing) await deleteCoverImage(existing.coverImage)

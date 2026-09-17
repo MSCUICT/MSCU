@@ -5,17 +5,31 @@ import Footer from "@/components/footer"
 import { Camera, Calendar, ExternalLink, Images } from "lucide-react"
 import { getGalleries } from "@/lib/gallery-store"
 
-export const metadata: Metadata = {
-  title: "Gallery - Photos",
-  description:
-    "Photos from the MSCU community of faith-driven medical students at the University of Nairobi.",
-  alternates: { canonical: "https://medicalschoolcu.org/gallery" },
-  openGraph: {
-    title: "MSCU Gallery - Photos",
-    description: "Photos from our community of faith-driven medical students.",
-    url: "https://medicalschoolcu.org/gallery",
-    type: "website",
-  },
+export async function generateMetadata(): Promise<Metadata> {
+  const galleries = await getGalleries()
+  // getGalleries() returns newest first, so the first entry's cover is
+  // the most recently added album — used as the link-preview thumbnail.
+  const latestCover = galleries[0]?.coverImage
+
+  return {
+    title: "Gallery - Photos",
+    description:
+      "Photos from the MSCU community of faith-driven medical students at the University of Nairobi.",
+    alternates: { canonical: "https://medicalschoolcu.org/gallery" },
+    openGraph: {
+      title: "MSCU Gallery - Photos",
+      description: "Photos from our community of faith-driven medical students.",
+      url: "https://medicalschoolcu.org/gallery",
+      type: "website",
+      ...(latestCover && { images: [{ url: latestCover }] }),
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: "MSCU Gallery - Photos",
+      description: "Photos from our community of faith-driven medical students.",
+      ...(latestCover && { images: [latestCover] }),
+    },
+  }
 }
 
 export const dynamic = "force-dynamic"

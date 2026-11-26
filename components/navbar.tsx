@@ -19,17 +19,25 @@ export default function Navbar() {
         </Link>
 
         {/* Mobile menu button */}
-        <button className="md:hidden" onClick={() => setIsOpen(!isOpen)}>
+        <button
+          className="lg:hidden"
+          onClick={() => setIsOpen(!isOpen)}
+          aria-label={isOpen ? "Close menu" : "Open menu"}
+          aria-expanded={isOpen}
+        >
           {isOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
 
-        {/* Desktop menu */}
-        <div className="hidden md:flex gap-8 items-center">
+        {/* Desktop menu (from lg: below that the links don't fit on one line) */}
+        <div className="hidden lg:flex gap-5 xl:gap-8 items-center whitespace-nowrap">
           <Link href="/#about" className="text-gray-700 hover:text-blue-600 transition">
             About
           </Link>
           <Link href="/leadership" className="text-gray-700 hover:text-blue-600 transition">
             Leadership
+          </Link>
+          <Link href="/compassion" className="text-gray-700 hover:text-blue-600 transition">
+            Compassion
           </Link>
           <Link href="/blog" className="text-gray-700 hover:text-blue-600 transition">
             Blog
@@ -54,12 +62,15 @@ export default function Navbar() {
 
         {/* Mobile menu */}
         {isOpen && (
-          <div className="absolute top-full left-0 right-0 bg-white border-b flex flex-col gap-4 p-4 md:hidden">
+          <div className="absolute top-full left-0 right-0 bg-white border-b flex flex-col gap-4 p-4 lg:hidden">
             <Link href="/#about" className="text-gray-700" onClick={() => setIsOpen(false)}>
               About
             </Link>
             <Link href="/leadership" className="text-gray-700" onClick={() => setIsOpen(false)}>
               Leadership
+            </Link>
+            <Link href="/compassion" className="text-gray-700" onClick={() => setIsOpen(false)}>
+              Compassion
             </Link>
             <Link href="/blog" className="text-gray-700" onClick={() => setIsOpen(false)}>
               Blog

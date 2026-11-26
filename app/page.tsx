@@ -8,6 +8,7 @@ import PhotoGallery from "@/components/photo-gallery"
 import Testimonials from "@/components/testimonials"
 import Footer from "@/components/footer"
 import ThemeOfYear from "@/components/ThemeOfYear"
+import CompassionHighlight from "@/components/compassion-highlight"
 
 const jsonLd = {
   "@context": "https://schema.org",
@@ -75,6 +76,7 @@ export default function Home() {
         <MissionVision />
         <ThemeOfYear />
         <UpcomingEvents />
+        <CompassionHighlight />
         <Resources />
         <PhotoGallery />
         <Testimonials />
